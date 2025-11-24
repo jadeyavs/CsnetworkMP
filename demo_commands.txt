@@ -1,0 +1,142 @@
+================================================================================
+                    POKEPROTOCOL - COMMAND REFERENCE
+================================================================================
+
+STEP 1: Open TWO terminal windows (you need 2 players!)
+
+================================================================================
+TERMINAL 1 - HOST (Player 1, goes first)
+================================================================================
+
+Command to run:
+    python main.py --name Player1 --host --port 8888 --pokemon Pikachu
+
+What you'll see:
+    [Player1] Listening on port 8888 as HOST
+    [Player1] Received HANDSHAKE_REQUEST, sent HANDSHAKE_RESPONSE with seed 12345
+    [Player1] Opponent is Charmander
+    [Player1] Battle initialized! You go first
+    
+    Commands:
+      attack <move_name> - Attack with a move
+      chat <message> - Send a text chat message
+      pokemon <name> - Set your Pokemon
+      quit - Exit the application
+    
+    [Player1]>
+
+Commands you can type:
+    attack Thunderbolt
+    attack Thunder
+    chat Good luck!
+    quit
+
+================================================================================
+TERMINAL 2 - JOINER (Player 2, waits for Player 1)
+================================================================================
+
+Command to run:
+    python main.py --name Player2 --port 8889 --connect 127.0.0.1:8888 --pokemon Charmander
+
+What you'll see:
+    [Player2] Listening on port 8889
+    [Player2] Opponent is Pikachu
+    [Player2] Battle initialized! Opponent goes first
+    
+    Commands:
+      attack <move_name> - Attack with a move
+      chat <message> - Send a text chat message
+      pokemon <name> - Set your Pokemon
+      quit - Exit the application
+    
+    [Player2]>
+
+Commands you can type:
+    attack Flamethrower
+    attack Ember
+    chat Nice move!
+    quit
+
+================================================================================
+EXAMPLE BATTLE FLOW
+================================================================================
+
+TERMINAL 1 (Host)              TERMINAL 2 (Joiner)
+─────────────────              ──────────────────
+[Player1]> attack Thunderbolt
+[BATTLE] Pikachu used          [BATTLE] Pikachu used
+         Thunderbolt!                   Thunderbolt!
+         It was super effective!        It was super effective!
+
+                                [Player2]> attack Flamethrower
+[BATTLE] Charmander used       [BATTLE] Charmander used
+         Flamethrower!                  Flamethrower!
+
+[Player1]> attack Thunder
+[BATTLE] Pikachu used          [BATTLE] Pikachu used
+         Thunder!                       Thunder!
+
+                                [Player2]> attack Ember
+[BATTLE] Charmander used       [BATTLE] Charmander used
+         Ember!                         Ember!
+
+[GAME OVER] Winner: Pikachu    [GAME OVER] Winner: Pikachu
+            Loser: Charmander            Loser: Charmander
+
+================================================================================
+AVAILABLE MOVES
+================================================================================
+
+Electric:  Thunderbolt, Thunder
+Fire:      Flamethrower, Ember
+Water:     Hydro Pump, Water Gun
+Grass:     Solar Beam, Vine Whip
+Normal:    Tackle, Quick Attack, Scratch
+Dark:      Bite
+
+================================================================================
+VERBOSE MODE (See all protocol messages)
+================================================================================
+
+Terminal 1:
+    python main.py --name Player1 --host --port 8888 --pokemon Pikachu --verbose
+
+Terminal 2:
+    python main.py --name Player2 --port 8889 --connect 127.0.0.1:8888 --pokemon Charmander --verbose
+
+You'll see:
+    [VERBOSE] Sent HANDSHAKE_RESPONSE (seq=1) with seed 12345
+    [VERBOSE] Received ATTACK_ANNOUNCE (seq=3): Thunderbolt
+    [VERBOSE] Sent ACK (ack=3) for message type ATTACK_ANNOUNCE
+    [VERBOSE] Sent CALCULATION_REPORT (seq=4)
+
+================================================================================
+SPECTATOR MODE (Watch without playing)
+================================================================================
+
+Terminal 3:
+    python main.py --name Spectator --port 8890 --connect 127.0.0.1:8888 --spectator
+
+Spectators can:
+    - See all battle messages
+    - Send/receive chat messages
+    - Cannot attack
+
+================================================================================
+TROUBLESHOOTING
+================================================================================
+
+Problem: "Address already in use"
+Solution: Use different port --port 9999
+
+Problem: "Pokemon not found"
+Solution: Check spelling: Pikachu, Charmander, Squirtle, Bulbasaur
+
+Problem: "Connection refused"
+Solution: Start Terminal 1 (host) FIRST, then Terminal 2 (joiner)
+
+Problem: Python not found
+Solution: Try python3 or py instead of python
+
+================================================================================
+
