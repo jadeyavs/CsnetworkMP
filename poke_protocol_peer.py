@@ -125,13 +125,28 @@ class PokeProtocolPeer:
             print(f"[{self.name}] [VERBOSE] Sent BATTLE_SETUP (seq={seq}) with {pokemon_name}")
     
     def _hp_bar(self, current: int, maximum: int, name: str, is_mine: bool = False) -> str:
-        """Create an HP bar string."""
+        """Create an HP bar string with color coding."""
+        # ANSI color codes
+        GREEN = '\033[92m'
+        YELLOW = '\033[93m'
+        RED = '\033[91m'
+        RESET = '\033[0m'
+        
         percentage = (current / maximum * 100) if maximum > 0 else 0
         bar_length = 30
         filled = int(bar_length * current / maximum) if maximum > 0 else 0
         bar = "█" * filled + "░" * (bar_length - filled)
         prefix = "YOU: " if is_mine else "OPPONENT: "
-        return f"{prefix}{name:15s} [{bar}] {current:3d}/{maximum:3d} ({percentage:5.1f}%)"
+        
+        # Choose color based on HP percentage
+        if percentage >= 65:
+            color = GREEN
+        elif percentage >= 25:
+            color = YELLOW
+        else:
+            color = RED
+        
+        return f"{prefix}{name:15s} [{color}{bar}{RESET}] {current:3d}/{maximum:3d} ({percentage:5.1f}%)"
     
     def _display_initial_battle_stats(self):
         """Display initial battle statistics when battle starts."""

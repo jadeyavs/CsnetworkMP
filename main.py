@@ -108,173 +108,226 @@ def main():
     # Load Pokemon data
     loader = PokemonLoader()
     
-    # Select Pokemon if not provided via command line
-    selected_pokemon = None
-    if args.pokemon:
-        selected_pokemon = loader.get_pokemon(args.pokemon)
-        if not selected_pokemon:
-            print(f"Error: Pokemon '{args.pokemon}' not found")
-            sys.exit(1)
-    else:
-        # Interactive Pokemon selection
-        if not args.spectator:
-            selector = PokemonSelector(loader)
-            selected_pokemon = selector.select_pokemon()
+    # Main application loop (allows for returning to menu)
+    first_run = True
+    while True:
+        # Select Pokemon if not provided via command line
+        selected_pokemon = None
+        if args.pokemon and first_run:
+            selected_pokemon = loader.get_pokemon(args.pokemon)
             if not selected_pokemon:
-                print("No Pokemon selected. Exiting...")
-                sys.exit(0)
-    
-    # Get connection choice (host or join) - do this before creating peer
-    is_host, connect_address, joiner_port, is_spectator = get_connection_choice(args, args.port)
-    
-    # Determine which port to use
-    if is_host:
-        peer_port = args.port
-    else:
-        peer_port = joiner_port
-    
-    # Adjust name based on role
-    if args.name == 'Player':
-        if is_host:
-            args.name = "Player 1 [HOST]"
-        elif not is_spectator:
-            args.name = "Player 2"
-    else:
-        if is_host:
-            args.name = f"{args.name} [HOST]"
-
-    # Create peer with correct role and port
-    peer = PokeProtocolPeer(args.name, peer_port, is_host, args.verbose)
-    
-    # Set up callbacks
-    def on_chat(sender, content_type, content):
-        if content_type == 'TEXT':
-            print(f"[CHAT] {sender}: {content}")
+                print(f"Error: Pokemon '{args.pokemon}' not found")
+                sys.exit(1)
         else:
-            print(f"[CHAT] {sender} sent a sticker")
+            # Interactive Pokemon selection
+            if not args.spectator:
+                selector = PokemonSelector(loader)
+                selected_pokemon = selector.select_pokemon()
+                if not selected_pokemon:
+                    print("No Pokemon selected. Exiting...")
+                    sys.exit(0)
+        
+        # Get connection choice (host or join) - do this before creating peer
+        is_host, connect_address, joiner_port, is_spectator = get_connection_choice(args, args.port)
+        
+        # Determine which port to use
+        if is_host:
+            peer_port = args.port
+        else:
+            peer_port = joiner_port
+        
+        # Adjust name based on role
+        player_name = args.name
+        if player_name == 'Player':
+            if is_host:
+                player_name = "Player 1 [HOST]"
+            elif not is_spectator:
+                player_name = "Player 2"
+        else:
+            # Only append [HOST] if not already there (in case of re-run)
+            if is_host and "[HOST]" not in player_name:
+                player_name = f"{player_name} [HOST]"
     
-    def on_battle_update(message):
-        print(f"[BATTLE] {message}")
-    
-    def on_game_over(winner, loser):
-        print(f"[GAME OVER] Winner: {winner}, Loser: {loser}")
-    
-    peer.on_chat_received = on_chat
-    peer.on_battle_update = on_battle_update
-    peer.on_game_over = on_game_over
-    
-    # Set Pokemon
-    peer.my_pokemon = selected_pokemon
-    
-    # Start peer
-    peer.start()
-    
-    # Startup flow based on role
-    if is_spectator:
-        # Spectator: Connect to host
-        peer.is_spectator = True
-        peer.connect_as_spectator(connect_address)
-        print(f"[{args.name}] Connecting as spectator to {connect_address[0]}:{connect_address[1]}...")
-    
-    elif is_host:
-        # Host: Wait for joiner to connect
-        print(f"\n[{args.name}] Waiting for joiner to connect...")
-        print(f"[{args.name}] Selected Pokemon: {selected_pokemon.name}")
-        print(f"[{args.name}] Listening on port {args.port}")
-        print(f"[{args.name}] Share this address with the other player: <your-ip>:{args.port}")
+        # Create peer with correct role and port
+        peer = PokeProtocolPeer(player_name, peer_port, is_host, args.verbose)
         
-        # Wait for handshake request from joiner
-        max_wait_time = 300  # 5 minutes
-        start_time = time.time()
-        while not peer.remote_address and (time.time() - start_time) < max_wait_time:
-            time.sleep(0.1)
-        
-        if not peer.remote_address:
-            print(f"[{args.name}] No joiner connected within {max_wait_time} seconds. Exiting...")
-            peer.stop()
-            sys.exit(1)
-        
-        print(f"[{args.name}] Joiner connected! Handshake completed.")
-        
-        # Send battle setup after handshake (handled in _handle_handshake_request)
-        if peer.my_pokemon and not peer.sent_my_setup:
-            peer.send_battle_setup(peer.my_pokemon.name)
-    
-    else:
-        # Joiner: Look for host and connect
-        host_ip, host_port = connect_address
-        print(f"\n[{args.name}] Looking for host at {host_ip}:{host_port}...")
-        print(f"[{args.name}] Selected Pokemon: {selected_pokemon.name}")
-        print(f"[{args.name}] Listening on port {peer_port}")
-        
-        peer.connect_as_joiner((host_ip, host_port))
-        
-        # Wait for handshake response
-        max_wait_time = 30
-        start_time = time.time()
-        while not peer.connected and (time.time() - start_time) < max_wait_time:
-            time.sleep(0.1)
-        
-        if not peer.connected:
-            print(f"[{args.name}] Failed to connect to host. Exiting...")
-            peer.stop()
-            sys.exit(1)
-        
-        print(f"[{args.name}] Connected to host! Handshake completed.")
-        
-        # Send battle setup after handshake (handled in _handle_handshake_response)
-        if peer.my_pokemon and not peer.sent_my_setup:
-            peer.send_battle_setup(peer.my_pokemon.name)
-    
-    # Interactive loop
-    try:
-        print("\nCommands:")
-        print("  attack <move_name> - Attack with a move")
-        print("  chat <message> - Send a text chat message")
-        print("  pokemon <name> - Set your Pokemon")
-        print("  quit - Exit the application")
-        if args.verbose:
-            print("\n[Verbose mode enabled - all protocol messages will be shown]")
-        print()
-        
-        while True:
-            try:
-                cmd = input(f"[{args.name}]> ").strip().split()
-                if not cmd:
-                    continue
-                
-                if cmd[0] == 'quit':
-                    break
-                elif cmd[0] == 'attack' and len(cmd) > 1:
-                    move_name = ' '.join(cmd[1:])
-                    try:
-                        peer.send_attack(move_name)
-                    except Exception as e:
-                        print(f"Error: {e}")
-                elif cmd[0] == 'chat' and len(cmd) > 1:
-                    message = ' '.join(cmd[1:])
-                    peer.send_chat('TEXT', message_text=message)
-                elif cmd[0] == 'pokemon' and len(cmd) > 1:
-                    pokemon_name = ' '.join(cmd[1:])
-                    loader = PokemonLoader()
-                    pokemon = loader.get_pokemon(pokemon_name)
-                    if pokemon:
-                        peer.my_pokemon = pokemon
-                        peer.send_battle_setup(pokemon_name)
-                        print(f"Set Pokemon to {pokemon_name}")
-                    else:
-                        print(f"Pokemon '{pokemon_name}' not found")
-                else:
-                    print("Unknown command")
+        # Set up callbacks
+        def on_chat(sender, content_type, content):
+            # ANSI color codes
+            BLUE = '\033[94m'
+            RED = '\033[91m'
+            RESET = '\033[0m'
             
-            except KeyboardInterrupt:
-                break
-            except Exception as e:
-                print(f"Error: {e}")
-    
-    finally:
-        peer.stop()
-        print("\nGoodbye!")
+            if content_type == 'TEXT':
+                # Color own messages blue, opponent messages red
+                if sender == player_name:
+                    print(f"{BLUE}{sender}: {content}{RESET}")
+                else:
+                    print(f"{RED}{sender}: {content}{RESET}")
+            else:
+                if sender == player_name:
+                    print(f"{BLUE}{sender} sent a sticker{RESET}")
+                else:
+                    print(f"{RED}{sender} sent a sticker{RESET}")
+        
+        def on_battle_update(message):
+            print(f"[BATTLE] {message}")
+        
+        def on_game_over(winner, loser):
+            print(f"[GAME OVER] Winner: {winner}, Loser: {loser}")
+        
+        peer.on_chat_received = on_chat
+        peer.on_battle_update = on_battle_update
+        peer.on_game_over = on_game_over
+        
+        # Set Pokemon
+        peer.my_pokemon = selected_pokemon
+        
+        # Game Loop
+        quit_to_menu = False
+        
+        # Start peer
+        peer.start()
+        
+        # Startup flow based on role
+        if is_spectator:
+            # Spectator: Connect to host
+            peer.is_spectator = True
+            peer.connect_as_spectator(connect_address)
+            print(f"[{player_name}] Connecting as spectator to {connect_address[0]}:{connect_address[1]}...")
+        
+        elif is_host:
+            # Host: Wait for joiner to connect
+            print(f"\n[{player_name}] Waiting for joiner to connect...")
+            if selected_pokemon:
+                print(f"[{player_name}] Selected Pokemon: {selected_pokemon.name}")
+            print(f"[{player_name}] Listening on port {args.port}")
+            print(f"[{player_name}] Share this address with the other player: <your-ip>:{args.port}")
+            
+            # Wait for handshake request from joiner
+            max_wait_time = 300  # 5 minutes
+            start_time = time.time()
+            while not peer.remote_address and (time.time() - start_time) < max_wait_time:
+                time.sleep(0.1)
+            
+            if not peer.remote_address:
+                print(f"[{player_name}] No joiner connected within {max_wait_time} seconds. Exiting...")
+                peer.stop()
+                sys.exit(1)
+            
+            print(f"[{player_name}] Joiner connected! Handshake completed.")
+            
+            # Send battle setup after handshake
+            if peer.my_pokemon and not peer.sent_my_setup:
+                peer.send_battle_setup(peer.my_pokemon.name)
+        
+        else:
+            # Joiner: Look for host and connect
+            host_ip, host_port = connect_address
+            print(f"\n[{player_name}] Looking for host at {host_ip}:{host_port}...")
+            if selected_pokemon:
+                print(f"[{player_name}] Selected Pokemon: {selected_pokemon.name}")
+            print(f"[{player_name}] Listening on port {peer_port}")
+            
+            peer.connect_as_joiner((host_ip, host_port))
+            
+            # Wait for handshake response
+            max_wait_time = 30
+            start_time = time.time()
+            while not peer.connected and (time.time() - start_time) < max_wait_time:
+                time.sleep(0.1)
+            
+            if not peer.connected:
+                print(f"[{player_name}] Failed to connect to host. Exiting...")
+                peer.stop()
+                sys.exit(1)
+            
+            print(f"[{player_name}] Connected to host! Handshake completed.")
+            
+            # Send battle setup after handshake
+            if peer.my_pokemon and not peer.sent_my_setup:
+                peer.send_battle_setup(peer.my_pokemon.name)
+        
+        # Interactive loop
+        game_over = False
+        
+        def on_game_over_callback(winner, loser):
+            nonlocal game_over
+            game_over = True
+        
+        peer.on_game_over = on_game_over_callback
+        
+        try:
+            print("\nCommands:")
+            print("  attack <move_name> - Attack with a move")
+            print("  chat <message> - Send a text chat message")
+            print("  pokemon <name> - Set your Pokemon")
+            print("  quit - Exit the application")
+            if args.verbose:
+                print("\n[Verbose mode enabled - all protocol messages will be shown]")
+            print()
+            
+            while not game_over:
+                try:
+                    cmd = input(f"[{player_name}]> ").strip().split()
+                    if not cmd:
+                        continue
+                    
+                    if cmd[0] == 'quit':
+                        peer.stop()
+                        print("\nGoodbye!")
+                        sys.exit(0)
+                    elif cmd[0] == 'attack' and len(cmd) > 1:
+                        move_name = ' '.join(cmd[1:])
+                        try:
+                            peer.send_attack(move_name)
+                        except Exception as e:
+                            print(f"Error: {e}")
+                    elif cmd[0] == 'chat' and len(cmd) > 1:
+                        message = ' '.join(cmd[1:])
+                        peer.send_chat('TEXT', message_text=message)
+                    elif cmd[0] == 'pokemon' and len(cmd) > 1:
+                        pokemon_name = ' '.join(cmd[1:])
+                        pokemon = loader.get_pokemon(pokemon_name)
+                        if pokemon:
+                            peer.my_pokemon = pokemon
+                            peer.send_battle_setup(pokemon_name)
+                            print(f"Set Pokemon to {pokemon_name}")
+                        else:
+                            print(f"Pokemon '{pokemon_name}' not found")
+                    else:
+                        print("Unknown command")
+                
+                except KeyboardInterrupt:
+                    break
+                except Exception as e:
+                    print(f"Error: {e}")
+            
+            # Game Over - return to menu
+            if game_over:
+                print("\n" + "=" * 60)
+                print("GAME OVER")
+                print("=" * 60)
+                print("Returning to main menu...")
+                print("=" * 60)
+                time.sleep(2)  # Brief pause before returning to menu
+                
+                # Stop peer - a new one will be created in the next loop iteration
+                peer.stop()
+                quit_to_menu = True
+        
+        except KeyboardInterrupt:
+            peer.stop()
+            print("\nGoodbye!")
+            sys.exit(0)
+        
+        # End of Game Loop
+        first_run = False
+        if not quit_to_menu:
+            # If we broke out without quit_to_menu (e.g. KeyboardInterrupt), exit app
+            peer.stop()
+            print("\nGoodbye!")
+            break
 
 
 if __name__ == '__main__':

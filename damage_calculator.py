@@ -48,12 +48,9 @@ class DamageCalculator:
                 defender_stat_boosts['special_defense_uses'] -= 1
         
         # Calculate type effectiveness
-        type1_effectiveness = defender.get_type_effectiveness(move_type)
-        type2_effectiveness = 1.0
-        if defender.type2:
-            type2_effectiveness = defender.get_type_effectiveness(move_type)
-        
-        type_effectiveness = type1_effectiveness * type2_effectiveness
+        # The CSV file already contains combined type effectiveness for dual-type Pokemon
+        # For example, a Grass/Water Pokemon's "against_fire" value already accounts for both types
+        type_effectiveness = defender.get_type_effectiveness(move_type)
         
         # Generate random factor (0.85 to 1.0)
         random_factor = self.random.uniform(0.85, 1.0)

@@ -58,17 +58,20 @@ class MessageProtocol:
     @staticmethod
     def create_battle_setup(communication_mode: str, pokemon_name: str, 
                            stat_boosts: Dict[str, int], pokemon_data: Dict,
-                           sequence_number: int = 0) -> bytes:
+                           sequence_number: int = 0, seed: Optional[int] = None) -> bytes:
         """Create a BATTLE_SETUP message."""
         import json
-        return MessageProtocol.serialize_message({
+        msg = {
             'message_type': 'BATTLE_SETUP',
             'communication_mode': communication_mode,
             'pokemon_name': pokemon_name,
             'stat_boosts': json.dumps(stat_boosts),
             'pokemon': json.dumps(pokemon_data),
             'sequence_number': str(sequence_number)
-        })
+        }
+        if seed is not None:
+            msg['seed'] = str(seed)
+        return MessageProtocol.serialize_message(msg)
     
     @staticmethod
     def create_attack_announce(move_name: str, sequence_number: int) -> bytes:
@@ -138,8 +141,7 @@ class MessageProtocol:
     
     @staticmethod
     def create_chat_message(sender_name: str, content_type: str, 
-                           message_text: Optional[str] = None,
-                           sticker_data: Optional[str] = None,
+                           message_text: str = None, sticker_data: str = None,
                            sequence_number: int = 0) -> bytes:
         """Create a CHAT_MESSAGE."""
         msg = {
@@ -155,10 +157,41 @@ class MessageProtocol:
         return MessageProtocol.serialize_message(msg)
     
     @staticmethod
+    def create_host_announcement(host_name: str, port: int, pokemon_name: str = None) -> bytes:
+        """Create a HOST_ANNOUNCEMENT for broadcast discovery."""
+        msg = {
+            'message_type': 'HOST_ANNOUNCEMENT',
+            'host_name': host_name,
+            'port': str(port)
+        }
+        if pokemon_name:
+            msg['pokemon_name'] = pokemon_name
+        return MessageProtocol.serialize_message(msg)
+    
+    @staticmethod
+    def create_discovery_request(joiner_name: str) -> bytes:
+        """Create a DISCOVERY_REQUEST to find hosts on the network."""
+        return MessageProtocol.serialize_message({
+            'message_type': 'DISCOVERY_REQUEST',
+            'joiner_name': joiner_name
+        })
+    
+    @staticmethod
+    def create_discovery_response(host_name: str, port: int, pokemon_name: str = None) -> bytes:
+        """Create a DISCOVERY_RESPONSE in reply to a discovery request."""
+        msg = {
+            'message_type': 'DISCOVERY_RESPONSE',
+            'host_name': host_name,
+            'port': str(port)
+        }
+        if pokemon_name:
+            msg['pokemon_name'] = pokemon_name
+        return MessageProtocol.serialize_message(msg)
+    
+    @staticmethod
     def create_ack(ack_number: int) -> bytes:
         """Create an ACK message."""
         return MessageProtocol.serialize_message({
             'message_type': 'ACK',
             'ack_number': str(ack_number)
         })
-
