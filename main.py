@@ -4,8 +4,93 @@ Command-line interface for PokeProtocol peer.
 """
 import sys
 import argparse
+import time
 from poke_protocol_peer import PokeProtocolPeer
 from pokemon_loader import PokemonLoader
+from pokemon_selector import PokemonSelector
+
+
+def get_connection_choice(args, default_port):
+    """
+    Get connection choice from user or command line arguments.
+    Returns: (is_host, connect_address, joiner_port, is_spectator) 
+    where connect_address is (ip, port) or None, and joiner_port is the port for joiner
+    """     # If command line arguments specify, use those
+    if args.spectator:
+        if args.connect:
+            host_ip, host_port = args.connect.split(':')
+            return (False, (host_ip, int(host_port)), default_port, True)  # (is_host, connect_address, joiner_port, is_spectator)
+        else:
+            print("Error: Spectator mode requires --connect option")
+            sys.exit(1)
+    
+    if args.host:
+        return (True, None, default_port, False)  # Host mode
+    
+    if args.connect:
+        host_ip, host_port = args.connect.split(':')
+        host_port = int(host_port)
+        # Ensure joiner port is different from host port
+        joiner_port = default_port
+        if joiner_port == host_port:
+            joiner_port = host_port + 1
+        return (False, (host_ip, host_port), joiner_port, False)  # Joiner mode
+    
+    # Interactive choice
+    print("\n" + "=" * 60)
+    print("CONNECTION MODE")
+    print("=" * 60)
+    print("1. Host a battle (wait for another player to join)")
+    print("2. Join a battle (connect to a host)")
+    print("=" * 60)
+    
+    while True:
+        try:
+            choice = input("\nEnter your choice (1 or 2): ").strip()
+            
+            if choice == '1':
+                return (True, None, default_port, False)  # Host mode
+            elif choice == '2':
+                # Ask for joiner's port first
+                while True:
+                    try:
+                        port_input = input(f"Enter your port number (default: {default_port + 1}): ").strip()
+                        if not port_input:
+                            joiner_port = default_port + 1
+                        else:
+                            joiner_port = int(port_input)
+                        
+                        if joiner_port < 1024 or joiner_port > 65535:
+                            print("Port must be between 1024 and 65535")
+                            continue
+                        break
+                    except ValueError:
+                        print("Invalid port number. Please enter a number.")
+                
+                # Ask for host address
+                while True:
+                    address_input = input("Enter host address (IP:PORT, e.g., 127.0.0.1:8888): ").strip()
+                    try:
+                        if ':' in address_input:
+                            host_ip, host_port = address_input.split(':')
+                            host_port = int(host_port)
+                            
+                            # Ensure joiner port is different from host port
+                            if joiner_port == host_port:
+                                print(f"Warning: Your port ({joiner_port}) cannot be the same as the host port ({host_port})")
+                                print(f"Automatically changing your port to {host_port + 1}")
+                                joiner_port = host_port + 1
+                            
+                            return (False, (host_ip, host_port), joiner_port, False)  # Joiner mode
+                        else:
+                            print("Invalid format. Please use IP:PORT (e.g., 127.0.0.1:8888)")
+                    except ValueError:
+                        print("Invalid port number. Please use IP:PORT (e.g., 127.0.0.1:8888)")
+            else:
+                print("Invalid choice. Please enter 1 or 2.")
+        except KeyboardInterrupt:
+            print("\nCancelled.")
+            sys.exit(0)
 
 
 def main():
@@ -15,13 +100,51 @@ def main():
     parser.add_argument('--host', action='store_true', help='Run as host')
     parser.add_argument('--connect', type=str, help='Connect to host (IP:PORT)')
     parser.add_argument('--spectator', action='store_true', help='Join as spectator')
-    parser.add_argument('--pokemon', type=str, help='Pokemon name to use')
+    parser.add_argument('--pokemon', type=str, help='Pokemon name to use (skips selection)')
     parser.add_argument('--verbose', action='store_true', help='Enable verbose mode (show all protocol messages)')
     
     args = parser.parse_args()
     
-    # Create peer
-    peer = PokeProtocolPeer(args.name, args.port, args.host, args.verbose)
+    # Load Pokemon data
+    loader = PokemonLoader()
+    
+    # Select Pokemon if not provided via command line
+    selected_pokemon = None
+    if args.pokemon:
+        selected_pokemon = loader.get_pokemon(args.pokemon)
+        if not selected_pokemon:
+            print(f"Error: Pokemon '{args.pokemon}' not found")
+            sys.exit(1)
+    else:
+        # Interactive Pokemon selection
+        if not args.spectator:
+            selector = PokemonSelector(loader)
+            selected_pokemon = selector.select_pokemon()
+            if not selected_pokemon:
+                print("No Pokemon selected. Exiting...")
+                sys.exit(0)
+    
+    # Get connection choice (host or join) - do this before creating peer
+    is_host, connect_address, joiner_port, is_spectator = get_connection_choice(args, args.port)
+    
+    # Determine which port to use
+    if is_host:
+        peer_port = args.port
+    else:
+        peer_port = joiner_port
+    
+    # Adjust name based on role
+    if args.name == 'Player':
+        if is_host:
+            args.name = "Player 1 [HOST]"
+        elif not is_spectator:
+            args.name = "Player 2"
+    else:
+        if is_host:
+            args.name = f"{args.name} [HOST]"
+
+    # Create peer with correct role and port
+    peer = PokeProtocolPeer(args.name, peer_port, is_host, args.verbose)
     
     # Set up callbacks
     def on_chat(sender, content_type, content):
@@ -40,34 +163,68 @@ def main():
     peer.on_battle_update = on_battle_update
     peer.on_game_over = on_game_over
     
+    # Set Pokemon
+    peer.my_pokemon = selected_pokemon
+    
     # Start peer
     peer.start()
     
-    # Connect if joiner or spectator
-    if args.connect:
-        host_ip, host_port = args.connect.split(':')
-        host_port = int(host_port)
-        
-        if args.spectator:
-            peer.connect_as_spectator((host_ip, host_port))
-        else:
-            peer.connect_as_joiner((host_ip, host_port))
+    # Startup flow based on role
+    if is_spectator:
+        # Spectator: Connect to host
+        peer.is_spectator = True
+        peer.connect_as_spectator(connect_address)
+        print(f"[{args.name}] Connecting as spectator to {connect_address[0]}:{connect_address[1]}...")
     
-    # Set Pokemon if provided
-    if args.pokemon:
-        loader = PokemonLoader()
-        pokemon = loader.get_pokemon(args.pokemon)
-        if pokemon:
-            peer.my_pokemon = pokemon
-            if peer.connected or peer.is_host:
-                peer.send_battle_setup(args.pokemon)
-        else:
-            print(f"Error: Pokemon '{args.pokemon}' not found")
-            print("Available Pokemon (first 20):")
-            all_pokemon = loader.list_all_pokemon()[:20]
-            for p in all_pokemon:
-                print(f"  - {p}")
+    elif is_host:
+        # Host: Wait for joiner to connect
+        print(f"\n[{args.name}] Waiting for joiner to connect...")
+        print(f"[{args.name}] Selected Pokemon: {selected_pokemon.name}")
+        print(f"[{args.name}] Listening on port {args.port}")
+        print(f"[{args.name}] Share this address with the other player: <your-ip>:{args.port}")
+        
+        # Wait for handshake request from joiner
+        max_wait_time = 300  # 5 minutes
+        start_time = time.time()
+        while not peer.remote_address and (time.time() - start_time) < max_wait_time:
+            time.sleep(0.1)
+        
+        if not peer.remote_address:
+            print(f"[{args.name}] No joiner connected within {max_wait_time} seconds. Exiting...")
+            peer.stop()
             sys.exit(1)
+        
+        print(f"[{args.name}] Joiner connected! Handshake completed.")
+        
+        # Send battle setup after handshake (handled in _handle_handshake_request)
+        if peer.my_pokemon and not peer.sent_my_setup:
+            peer.send_battle_setup(peer.my_pokemon.name)
+    
+    else:
+        # Joiner: Look for host and connect
+        host_ip, host_port = connect_address
+        print(f"\n[{args.name}] Looking for host at {host_ip}:{host_port}...")
+        print(f"[{args.name}] Selected Pokemon: {selected_pokemon.name}")
+        print(f"[{args.name}] Listening on port {peer_port}")
+        
+        peer.connect_as_joiner((host_ip, host_port))
+        
+        # Wait for handshake response
+        max_wait_time = 30
+        start_time = time.time()
+        while not peer.connected and (time.time() - start_time) < max_wait_time:
+            time.sleep(0.1)
+        
+        if not peer.connected:
+            print(f"[{args.name}] Failed to connect to host. Exiting...")
+            peer.stop()
+            sys.exit(1)
+        
+        print(f"[{args.name}] Connected to host! Handshake completed.")
+        
+        # Send battle setup after handshake (handled in _handle_handshake_response)
+        if peer.my_pokemon and not peer.sent_my_setup:
+            peer.send_battle_setup(peer.my_pokemon.name)
     
     # Interactive loop
     try:

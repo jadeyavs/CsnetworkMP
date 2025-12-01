@@ -104,6 +104,11 @@ class ReliabilityLayer:
             self.received_sequences.add(sequence_number)
             return False
     
+    def clear_received_sequences(self):
+        """Clear the received sequences set (useful when starting a new battle)."""
+        with self.lock:
+            self.received_sequences.clear()
+    
     def _retry_loop(self):
         """Background thread that retries unacknowledged messages."""
         while self.running:

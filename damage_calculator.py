@@ -93,6 +93,7 @@ MOVE_DATABASE = {
     'ember': {'type': 'fire', 'power': 40.0, 'category': 'special'},
     'flamethrower': {'type': 'fire', 'power': 90.0, 'category': 'special'},
     'water gun': {'type': 'water', 'power': 40.0, 'category': 'special'},
+    'water shuriken': {'type': 'water', 'power': 75.0, 'category': 'special'},
     'hydro pump': {'type': 'water', 'power': 110.0, 'category': 'special'},
     'vine whip': {'type': 'grass', 'power': 45.0, 'category': 'physical'},
     'solar beam': {'type': 'grass', 'power': 120.0, 'category': 'special'},

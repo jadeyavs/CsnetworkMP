@@ -48,7 +48,7 @@ class BattleEngine:
         self.opponent_stat_boosts: Dict[str, int] = {}
         
         # Turn tracking
-        self.current_sequence: int = 0
+        self.current_sequence: int = 10000
         self.current_move: Optional[str] = None
         self.my_calculation: Optional[Dict] = None
         self.opponent_calculation: Optional[Dict] = None
@@ -86,7 +86,7 @@ class BattleEngine:
         if not self.can_attack():
             raise ValueError("Not your turn to attack")
         
-        self.current_sequence += 1
+        self.current_sequence += 10
         self.current_move = move_name
         self.state = BattleState.PROCESSING_TURN
         if self.on_state_change:
@@ -94,7 +94,7 @@ class BattleEngine:
         
         return self.current_sequence
     
-    def receive_attack_announce(self, move_name: str) -> int:
+    def receive_attack_announce(self, move_name: str, sequence_number: int) -> int:
         """
         Receive an attack announcement from opponent.
         
@@ -104,7 +104,7 @@ class BattleEngine:
         if self.is_my_turn:
             raise ValueError("Received attack when it's my turn")
         
-        self.current_sequence += 1
+        self.current_sequence = sequence_number
         self.current_move = move_name
         self.state = BattleState.PROCESSING_TURN
         if self.on_state_change:
